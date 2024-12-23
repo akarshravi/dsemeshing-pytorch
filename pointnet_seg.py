@@ -106,54 +106,55 @@ class logmap_net(nn.Module):
         self.is_training = is_training
         self.batch_size = batch_size
         
-        self.conv1 = nn.Conv2d(1, 64, kernel_size=(1, 4), stride=(1, 1), padding='VALID')
-        self.conv2 = nn.Conv2d(64, 64, kernel_size=(1, 1), stride=(1, 1), padding='VALID')
-        self.conv3 = nn.Conv2d(64, 128, kernel_size=(1, 1), stride=(1, 1), padding='VALID')
-        self.conv4 = nn.Conv2d(128, 256, kernel_size=(1, 1), stride=(1, 1), padding='VALID')
-        self.conv5 = nn.Conv2d(256, 1024, kernel_size=(1, 1), stride=(1, 1), padding='VALID')
+        self.conv1 = nn.Conv2d(1, 64, kernel_size=(1, 4), stride=(1, 1))
+        self.conv2 = nn.Conv2d(64, 64, kernel_size=(1, 1), stride=(1, 1))
+        self.conv3 = nn.Conv2d(64, 128, kernel_size=(1, 1), stride=(1, 1))
+        self.conv4 = nn.Conv2d(128, 256, kernel_size=(1, 1), stride=(1, 1))
+        self.conv5 = nn.Conv2d(256, 1024, kernel_size=(1, 1), stride=(1, 1))
 
         self.fc1 = nn.Linear(1024, 1024)
         self.fc2 = nn.Linear(1024, 1024)
 
-        self.conv6 = nn.Conv2d(1024 + 1, 1024, kernel_size=(1, 1), stride=(1, 1), padding='VALID')
-        self.conv7 = nn.Conv2d(1024, 528, kernel_size=(1, 1), stride=(1, 1), padding='VALID')
-        self.conv8 = nn.Conv2d(528, 3, kernel_size=(1, 1), stride=(1, 1), padding='VALID')
+        self.conv6 = nn.Conv2d(1024 + 4, 1024, kernel_size=(1, 1), stride=(1, 1))
+        self.conv7 = nn.Conv2d(1024, 528, kernel_size=(1, 1), stride=(1, 1))
+        self.conv8 = nn.Conv2d(528, 3, kernel_size=(1, 1), stride=(1, 1))
 
-        self.conv9 = nn.Conv2d(3 + 1, 1024, kernel_size=(1, 1), stride=(1, 1), padding='VALID')
-        self.conv10 = nn.Conv2d(1024, 528, kernel_size=(1, 1), stride=(1, 1), padding='VALID')
-        self.conv11 = nn.Conv2d(528, 2, kernel_size=(1, 1), stride=(1, 1), padding='VALID')
+        self.conv9 = nn.Conv2d(3 + 1+1024, 1024, kernel_size=(1, 1), stride=(1, 1))
+        self.conv10 = nn.Conv2d(1024, 528, kernel_size=(1, 1), stride=(1, 1))
+        self.conv11 = nn.Conv2d(528, 2, kernel_size=(1, 1), stride=(1, 1))
 
     def forward(self, point_cloud):
-        num_point = point_cloud.size(1)
-        
-        euc_dists = torch.norm(point_cloud - point_cloud[:, 0:1, :], dim=-1, keepdim=True)
+        num_point = point_cloud.shape[1]
+
+        # Compute Euclidean distances
+        euc_dists = safe_norm(point_cloud - point_cloud[:, 0:1, :], axis=-1).unsqueeze(-1)
         point_cloud = torch.cat([point_cloud, euc_dists], dim=2)
-        input_image = point_cloud.unsqueeze(-1)
+        input_image = point_cloud.unsqueeze(1)  # Add channel dimension 
+       
 
         net = F.relu(self.conv1(input_image))
         net = F.relu(self.conv2(net))
         net = F.relu(self.conv3(net))
         net = F.relu(self.conv4(net))
         points_feat1 = F.relu(self.conv5(net))
-
-        pc_feat1 = F.max_pool2d(points_feat1, (num_point, 1), padding='VALID')
+        pc_feat1 = F.max_pool2d(points_feat1, (num_point,1))
         pc_feat1 = pc_feat1.view(self.batch_size, 1024)
         pc_feat1 = F.relu(self.fc1(pc_feat1))
         pc_feat1 = F.relu(self.fc2(pc_feat1))
 
-        pc_feat1_expand = pc_feat1.unsqueeze(1).unsqueeze(1).expand(-1, num_point, -1, -1)
+        pc_feat1_expand = pc_feat1.view(self.batch_size,-1, 1, 1).repeat(1,1, num_point, 1)
 
-        points_feat1_concat = torch.cat([point_cloud.unsqueeze(-2), pc_feat1_expand], dim=3)
+        points_feat1_concat = torch.cat([point_cloud.unsqueeze(-2).permute(0,3,1,2), pc_feat1_expand], dim=1)
 
         net = F.relu(self.conv6(points_feat1_concat))
         net = F.relu(self.conv7(net))
         net = F.relu(self.conv8(net))
 
-        euc_dists = torch.norm(net - net[:, 0:1, :, :], dim=-1, keepdim=True)
-        net = torch.cat([net, euc_dists], dim=3)
 
-        points_feat2_concat = torch.cat([net, pc_feat1_expand], dim=3)
-        
+        euc_dists = safe_norm(net - net[:,:, 0:1, :], axis=1).unsqueeze(1)
+        net = torch.cat([net, euc_dists], dim=1)
+
+        points_feat2_concat = torch.cat([net, pc_feat1_expand], dim=1)
         net = F.relu(self.conv9(points_feat2_concat))
         net = F.relu(self.conv10(net))
         net = self.conv11(net)
