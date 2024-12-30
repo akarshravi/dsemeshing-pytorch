@@ -9,6 +9,7 @@ from pointnet_seg import classification_net
 import sys
 from typing import List
 
+
 gpu=0
 
 
@@ -25,10 +26,10 @@ N_ORIG_NEIGHBORS = 200
 N_NEIGHBORS_DATASET = 120
 N_NEAREST_NEIGHBORS = 30
 N_NEIGHBORS = 120
-TESTING_SHAPES = [21, 11, 26]
-#TESTING_SHAPES = [1,2]
-TRAINING_SHAPES = list(set(list(range(56))) - set(TESTING_SHAPES))
-#TRAINING_SHAPES = list(set(list(range(6))) - set(TESTING_SHAPES))
+#TESTING_SHAPES = [21, 11, 26]
+TESTING_SHAPES = [1,2]
+#TRAINING_SHAPES = list(set(list(range(56))) - set(TESTING_SHAPES))
+TRAINING_SHAPES = list(set(list(range(6))) - set(TESTING_SHAPES))
 N_TRAINING_SHAPES = len(TRAINING_SHAPES)
 N_TESTING_SHAPES = len(TESTING_SHAPES)
 LOG_DIR = "../log/log_famousthingi_classifier"
@@ -69,29 +70,9 @@ class CustomDataset(Dataset):
         return self.data[idx]
     
 
-def get_model_predictions(model, batch, device,rotations):
-    batch = batch[:, :N_ORIG_NEIGHBORS]
-    batch = batch[:, :N_NEIGHBORS]
-    neighbor_points = batch[:, :N_NEIGHBORS, :3]
-    gt_map = batch[:, :N_NEIGHBORS, 3:]
-    # Subtract the first neighbor point (broadcasting is automatic in PyTorch)
-    neighbor_points = neighbor_points - neighbor_points[:, 0:1, :].expand(-1, N_NEIGHBORS, -1)
-    # Perform the matrix multiplication with rotations
-    neighbor_points = torch.bmm(rotations, neighbor_points.transpose(1, 2)).transpose(1, 2)
-
-    if RESIZE:
-        # Compute the diagonal (safe_norm equivalent)
-        diag = torch.norm(torch.max(neighbor_points, dim=1).values - torch.min(neighbor_points, dim=1).values, dim=-1)
-
-        # Expand the diagonal to match neighbor_points shape
-        diag = diag.view(-1, 1, 1).expand(-1, neighbor_points.size(1), neighbor_points.size(2))
-
-        # Divide neighbor_points by the diagonal
-        neighbor_points = neighbor_points / diag
-
-        # Divide gt_map by the diagonal (only consider the first 2 dimensions)
-        gt_map = gt_map / diag[:, :, :2]
-        
+def get_model_predictions(model, batch, device):
+    neighbor_points,gt_map=batch
+    neighbor_points,gt_map=neighbor_points.to(device),gt_map.to(device)
     map = model(neighbor_points)  # Predicted output
     map = map.squeeze()  # Equivalent to tf.squeeze
 
@@ -149,9 +130,7 @@ def train_one_epoch(test_loader,model,optimizer,device,epoch):
     l_acc= []
     n_steps=len(test_loader)
     for step,batch in enumerate(test_loader):
-        batch=batch.to(device)
-        rotations = torch.tensor(R.random(BATCH_SIZE).as_matrix(), dtype=torch.float32,device=device)
-        loss,acc=get_model_predictions(model, batch, device,rotations)
+        loss,acc=get_model_predictions(model, batch, device)
         
         # Backpropagation and optimization
         optimizer.zero_grad(set_to_none=True)
@@ -180,9 +159,9 @@ def eval_one_epoch(model, dataloader, device, epoch):
     n_steps = len(dataloader)
     with torch.no_grad():
         for step, batch in enumerate(dataloader):
-            batch=batch.to(device)
-            rotations = torch.eye(3).view(1, 3, 3).repeat(BATCH_SIZE, 1, 1).to(device)
-            loss,acc=get_model_predictions(model, batch, device,rotations)           
+            #batch=batch.to(device)
+            #rotations = torch.eye(3).view(1, 3, 3).repeat(BATCH_SIZE, 1, 1).to(device)
+            loss,acc=get_model_predictions(model, batch, device)           
             l_loss.append(loss.item())
             l_acc.append(acc.item())
             
@@ -195,15 +174,42 @@ def eval_one_epoch(model, dataloader, device, epoch):
 
 
 
+def collate_fn_with_augmentation(batch):
+    batch=torch.stack(batch)
+    rotations = torch.tensor(R.random(BATCH_SIZE).as_matrix(), dtype=torch.float32)
+    batch = batch[:, :N_ORIG_NEIGHBORS]
+    batch = batch[:, :N_NEIGHBORS]
+    neighbor_points = batch[:, :N_NEIGHBORS, :3]
+    gt_map = batch[:, :N_NEIGHBORS, 3:]
+    # Subtract the first neighbor point (broadcasting is automatic in PyTorch)
+    neighbor_points = neighbor_points - neighbor_points[:, 0:1, :].expand(-1, N_NEIGHBORS, -1)
+    # Perform the matrix multiplication with rotations
+    neighbor_points = torch.bmm(rotations, neighbor_points.transpose(1, 2)).transpose(1, 2)
+
+    if RESIZE:
+        # Compute the diagonal (safe_norm equivalent)
+        diag = torch.norm(torch.max(neighbor_points, dim=1).values - torch.min(neighbor_points, dim=1).values, dim=-1)
+
+        # Expand the diagonal to match neighbor_points shape
+        diag = diag.view(-1, 1, 1).expand(-1, neighbor_points.size(1), neighbor_points.size(2))
+
+        # Divide neighbor_points by the diagonal
+        neighbor_points = neighbor_points / diag
+
+        # Divide gt_map by the diagonal (only consider the first 2 dimensions)
+        gt_map = gt_map / diag[:, :, :2]
+        return neighbor_points,gt_map
 
 if __name__ == '__main__':
+    
+
     # Example usage
-    filenames = [path_records.format(i) for i in range(0,56)]  
-    #filenames = [path_records.format(i) for i in range(0,6)]
+    #filenames = [path_records.format(i) for i in range(0,56)]  
+    filenames = [path_records.format(i) for i in range(0,6)]
     training_data = CustomDataset([filenames[i] for i in TRAINING_SHAPES],N_NEIGHBORS,N_ORIG_NEIGHBORS)
     testing_data = CustomDataset([filenames[i] for i in TESTING_SHAPES],N_NEIGHBORS,N_ORIG_NEIGHBORS)
-    train_loader = torch.utils.data.DataLoader(training_data,drop_last=True, batch_size=BATCH_SIZE ,shuffle=True, num_workers=4,pin_memory=True)
-    test_loader = torch.utils.data.DataLoader(testing_data, drop_last=True,batch_size=BATCH_SIZE, shuffle=True,num_workers=4,pin_memory=True)
+    train_loader = torch.utils.data.DataLoader(training_data,drop_last=True, batch_size=BATCH_SIZE ,num_workers=8,shuffle=True,collate_fn=collate_fn_with_augmentation)
+    test_loader = torch.utils.data.DataLoader(testing_data, drop_last=True,batch_size=BATCH_SIZE,num_workers=8, shuffle=True,collate_fn=collate_fn_with_augmentation)
 
 
 
@@ -215,11 +221,14 @@ if __name__ == '__main__':
 
     device = torch.device("cuda:"+str(gpu) if torch.cuda.is_available() else "cpu")
     model=classification_net(batch_size=BATCH_SIZE)
+    model = nn.DataParallel(model)
     model.to(device)
     optimizer = optim.Adam(model.parameters(), lr=lr)
     num_epochs=1000
 
 
+    start_event = torch.cuda.Event(enable_timing=True)
+    end_event = torch.cuda.Event(enable_timing=True)
 
 
 
@@ -228,7 +237,18 @@ if __name__ == '__main__':
             for param_group in optimizer.param_groups:
                 param_group['lr'] = 0.001
         # Train and evaluate
+
+
+        start_event.record()
+        # Code to measure
         train_one_epoch(train_loader,model,optimizer,device,epoch)
+        end_event.record()
+
+        torch.cuda.synchronize()  # Wait for GPU to finish
+        elapsed_time = start_event.elapsed_time(end_event)  # Time in milliseconds
+        print(f"Epoch {epoch} completed in {elapsed_time / 1000:.2f} seconds.")
+
+
         loss_val = eval_one_epoch(model, test_loader, device, epoch)
 
         # Save the best model
