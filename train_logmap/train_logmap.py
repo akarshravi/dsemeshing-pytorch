@@ -168,7 +168,7 @@ if __name__ == '__main__':
 
     device = torch.device("cuda:"+str(gpu) if torch.cuda.is_available() else "cpu")
     model=logmap_net(batch_size=BATCH_SIZE)
-    model=nn.DataParallel(logmap_net)
+    model=nn.DataParallel(model)
     model.to(device)
     optimizer = optim.Adam(model.parameters(), lr=lr)
     num_epochs=500

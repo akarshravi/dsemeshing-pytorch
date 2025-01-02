@@ -174,16 +174,14 @@ if __name__ == '__main__':
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-    #logmap_model = LogMapModel().to(device)
-    #classifier_model = ClassifierModel().to(device)
+
     logmap = "../log/log_famousthingi_logmap/best_model.pth"
     classifier = "../log/log_famousthingi_classifier/best_model.pth"
     
     classifier_model=nn.DataParallel(classification_net(batch_size=BATCH_SIZE).to(device))
     classifier_model.load_state_dict(torch.load(classifier,weights_only=True))
     classifier_model.eval()
-    #logmap_model=nn.DataParallel(logmap_net())
-    logmap_model=logmap_net(batch_size=BATCH_SIZE).to(device)
+    logmap_model=nn.DataParallel(logmap_net(batch_size=BATCH_SIZE).to(device))
     logmap_model.load_state_dict(torch.load(logmap,weights_only=True))
     logmap_model.eval()
     # Load pre-trained models
