@@ -61,7 +61,6 @@ class classification_net(nn.Module):
         point_cloud = torch.cat([point_cloud, euc_dists], dim=2)
         input_image = point_cloud.unsqueeze(1)  # Add channel dimension 
        
-
         # Convolutions
         net = self.activation(self.conv1(input_image))
         net = self.activation(self.conv2(net))
@@ -75,7 +74,6 @@ class classification_net(nn.Module):
      
         # Fully connected layers
         pc_feat1 = pc_feat1.view(self.batch_size, 1024)
-   
         pc_feat1 = self.activation(self.fc1(pc_feat1))
         pc_feat1 = self.activation(self.fc2(pc_feat1))
   

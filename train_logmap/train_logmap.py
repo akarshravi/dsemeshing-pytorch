@@ -2,7 +2,7 @@ import os
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torch.utils.data import DataLoader, Dataset
+from torch.utils.data import DataLoader
 import numpy as np
 from scipy.spatial.transform import Rotation as R
 from pointnet_seg import logmap_net
@@ -10,6 +10,7 @@ import sys
 from typing import List
 import align
 
+from torch_dataset import CustomDataset
 
 gpu=0
 
@@ -18,8 +19,6 @@ BASE_DIR = os.path.dirname(__file__)
 sys.path.append(BASE_DIR)
 ROOT_DIR = os.path.dirname(BASE_DIR)
 os.environ["CUDA_VISIBLE_DEVICES"]=str(gpu)
-def safe_norm(x, epsilon=1e-8, axis=-1):
-    return torch.sqrt(torch.clamp(torch.sum(x**2, dim=axis), min=epsilon))
 
 BATCH_SIZE = 64
 RESIZE=True
@@ -40,34 +39,53 @@ path_records = "C:/Users/Akarsh/Desktop/project/extended-dse-meshing/data/numpy_
 TRAINSET_SIZE = n_patches*N_TRAINING_SHAPES
 VALSET_SIZE = n_patches*N_TESTING_SHAPES
 
+def safe_norm(x, epsilon=1e-8, axis=-1):
+    return torch.sqrt(torch.clamp(torch.sum(x**2, dim=axis), min=epsilon))
 
-class CustomDataset(Dataset):
-    def __init__(self, filenames: List[str], N_NEIGHBORS: int, N_ORIG_NEIGHBORS: int):
-        self.filenames = filenames
-        
-        # Load and parse data from .npy files
-        self.data = self.load_data()
+
+def collate_fn_logmap(batch):
+    batch=torch.stack(batch)
+    rotations = torch.tensor(R.random(BATCH_SIZE).as_matrix(), dtype=torch.float32)
+    batch = batch[:, :N_ORIG_NEIGHBORS]
+    batch = batch[:, :N_NEIGHBORS_DATASET]
+    neighbor_points = batch[:, :, :3]
+    gt_map = batch[:, :, 3:]
+    # Subtract the first neighbor point (broadcasting is automatic in PyTorch)
+    neighbor_points = neighbor_points - neighbor_points[:, 0:1, :].expand(-1, N_NEIGHBORS, -1)
+
+    if RESIZE:
+        # Compute the diagonal (safe_norm equivalent)
+        diag = safe_norm(torch.max(neighbor_points, dim=1).values - torch.min(neighbor_points, dim=1).values, axis=-1)
+        diag += torch.normal(mean=0.0, std=0.01, size=(BATCH_SIZE,), device=neighbor_points.device)
+        # Expand the diagonal to match neighbor_points shape
+        diag = diag.view(-1, 1, 1).expand(-1, neighbor_points.size(1), neighbor_points.size(2))
+
+        # Divide neighbor_points by the diagonal
+        neighbor_points = neighbor_points / diag
+
+        # Divide gt_map by the diagonal (only consider the first 2 dimensions)
+        gt_map = gt_map / diag[:, :, :2]
+    
+
+    dists = safe_norm(gt_map, axis=-1) 
+
+    #check if dim=-1 causes problems
+    geo_neighbors = torch.topk(-dists, k=N_NEIGHBORS, dim=-1).indices  
+
+    gt_map = torch.gather(gt_map, 1, geo_neighbors.unsqueeze(-1).expand(-1, -1, gt_map.size(-1)))
+
+    neighbor_points = torch.gather(neighbor_points, 1, geo_neighbors.unsqueeze(-1).expand(-1, -1, neighbor_points.size(-1)))
+
+    # Subtract the first neighbor point (broadcast automatically in PyTorch)
+    neighbor_points = neighbor_points - neighbor_points[:, 0:1, :].expand(-1, N_NEIGHBORS, -1)
+
+    # Perform the matrix multiplication and transpose
+    neighbor_points = torch.bmm(rotations, neighbor_points.transpose(1, 2)).transpose(1, 2)
 
     
-    def load_data(self):
-        data_list = []
-        for filename in self.filenames:
-            
-            if os.path.exists(filename):
-                data = np.load(filename)
-                data_list.append(torch.tensor(data, dtype=torch.float32))
-            else:
-                raise FileNotFoundError(f"{filename} does not exist.")
-        
-        # Concatenate all data
-        data_tensor = torch.cat(data_list, dim=0)
-        return data_tensor
-    
-    def __len__(self):
-        return len(self.data)
-    
-    def __getitem__(self, idx):
-        return self.data[idx]
+    return neighbor_points,gt_map
+
+
     
 def get_model_predictions(model, batch, device):
     neighbor_points,gt_map=batch
@@ -128,48 +146,6 @@ def eval_one_epoch(model, dataloader, device, epoch):
     avg_loss = np.mean(l_loss)
     return avg_loss
 
-def collate_fn_with_augmentation(batch):
-    batch=torch.stack(batch)
-    rotations = torch.tensor(R.random(BATCH_SIZE).as_matrix(), dtype=torch.float32)
-    batch = batch[:, :N_ORIG_NEIGHBORS]
-    batch = batch[:, :N_NEIGHBORS_DATASET]
-    neighbor_points = batch[:, :, :3]
-    gt_map = batch[:, :, 3:]
-    # Subtract the first neighbor point (broadcasting is automatic in PyTorch)
-    neighbor_points = neighbor_points - neighbor_points[:, 0:1, :].expand(-1, N_NEIGHBORS, -1)
-
-    if RESIZE:
-        # Compute the diagonal (safe_norm equivalent)
-        diag = safe_norm(torch.max(neighbor_points, dim=1).values - torch.min(neighbor_points, dim=1).values, axis=-1)
-        diag += torch.normal(mean=0.0, std=0.01, size=(BATCH_SIZE,), device=neighbor_points.device)
-        # Expand the diagonal to match neighbor_points shape
-        diag = diag.view(-1, 1, 1).expand(-1, neighbor_points.size(1), neighbor_points.size(2))
-
-        # Divide neighbor_points by the diagonal
-        neighbor_points = neighbor_points / diag
-
-        # Divide gt_map by the diagonal (only consider the first 2 dimensions)
-        gt_map = gt_map / diag[:, :, :2]
-    
-
-    dists = safe_norm(gt_map, axis=-1) 
-
-    #check if dim=-1 causes problems
-    geo_neighbors = torch.topk(-dists, k=N_NEIGHBORS, dim=-1).indices  
-
-    gt_map = torch.gather(gt_map, 1, geo_neighbors.unsqueeze(-1).expand(-1, -1, gt_map.size(-1)))
-
-    neighbor_points = torch.gather(neighbor_points, 1, geo_neighbors.unsqueeze(-1).expand(-1, -1, neighbor_points.size(-1)))
-
-    # Subtract the first neighbor point (broadcast automatically in PyTorch)
-    neighbor_points = neighbor_points - neighbor_points[:, 0:1, :].expand(-1, N_NEIGHBORS, -1)
-
-    # Perform the matrix multiplication and transpose
-    neighbor_points = torch.bmm(rotations, neighbor_points.transpose(1, 2)).transpose(1, 2)
-
-    
-    return neighbor_points,gt_map
-
 
 if __name__ == '__main__':
     # Example usage
@@ -177,8 +153,8 @@ if __name__ == '__main__':
     filenames = [path_records.format(i) for i in range(0,6)]
     training_data = CustomDataset([filenames[i] for i in TRAINING_SHAPES],N_NEIGHBORS,N_ORIG_NEIGHBORS)
     testing_data = CustomDataset([filenames[i] for i in TESTING_SHAPES],N_NEIGHBORS,N_ORIG_NEIGHBORS)
-    train_loader = torch.utils.data.DataLoader(training_data,drop_last=True, batch_size=BATCH_SIZE ,num_workers=8,shuffle=True,collate_fn=collate_fn_with_augmentation)
-    test_loader = torch.utils.data.DataLoader(testing_data, drop_last=True,batch_size=BATCH_SIZE,num_workers=8, shuffle=True,collate_fn=collate_fn_with_augmentation)
+    train_loader = DataLoader(training_data,drop_last=True, batch_size=BATCH_SIZE ,num_workers=8,shuffle=True,collate_fn=collate_fn_logmap)
+    test_loader = DataLoader(testing_data, drop_last=True,batch_size=BATCH_SIZE,num_workers=8, shuffle=True,collate_fn=collate_fn_logmap)
 
 
     
@@ -192,6 +168,7 @@ if __name__ == '__main__':
 
     device = torch.device("cuda:"+str(gpu) if torch.cuda.is_available() else "cpu")
     model=logmap_net(batch_size=BATCH_SIZE)
+    model=nn.DataParallel(logmap_net)
     model.to(device)
     optimizer = optim.Adam(model.parameters(), lr=lr)
     num_epochs=500
