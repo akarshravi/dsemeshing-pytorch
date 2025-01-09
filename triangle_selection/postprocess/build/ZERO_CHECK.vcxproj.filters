@@ -1,0 +1,13 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="16.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <CustomBuild Include="C:\Users\Akarsh\Desktop\project\extended-dse-meshing\triangle_selection\postprocess\build\CMakeFiles\9b2bf20e1a0e7394daa0e3d34762a30f\generate.stamp.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="CMake Rules">
+      <UniqueIdentifier>{E07D2748-C2B1-3CEF-BF7F-104F62D613E0}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+</Project>

@@ -1,0 +1,10 @@
+^C:\USERS\AKARSH\DESKTOP\PROJECT\EXTENDED-DSE-MESHING\TRIANGLE_SELECTION\POSTPROCESS\CMAKELISTS.TXT
+setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -SC:/Users/Akarsh/Desktop/project/extended-dse-meshing/triangle_selection/postprocess -BC:/Users/Akarsh/Desktop/project/extended-dse-meshing/triangle_selection/postprocess/build --check-stamp-file C:/Users/Akarsh/Desktop/project/extended-dse-meshing/triangle_selection/postprocess/build/CMakeFiles/generate.stamp
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
