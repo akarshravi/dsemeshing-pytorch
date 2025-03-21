@@ -24,10 +24,10 @@ N_ORIG_NEIGHBORS = 200
 N_NEIGHBORS_DATASET = 120
 N_NEAREST_NEIGHBORS = 30
 N_NEIGHBORS = 120
-#TESTING_SHAPES = [21, 11, 26]
-TESTING_SHAPES = [1,2]
-#TRAINING_SHAPES = list(set(list(range(56))) - set(TESTING_SHAPES))
-TRAINING_SHAPES = list(set(list(range(6))) - set(TESTING_SHAPES))
+TESTING_SHAPES = [21, 11, 26]
+#TESTING_SHAPES = [1,2]
+TRAINING_SHAPES = list(set(list(range(56))) - set(TESTING_SHAPES))
+#TRAINING_SHAPES = list(set(list(range(6))) - set(TESTING_SHAPES))
 N_TRAINING_SHAPES = len(TRAINING_SHAPES)
 N_TESTING_SHAPES = len(TESTING_SHAPES)
 LOG_DIR = "../log/log_famousthingi_classifier"
@@ -173,8 +173,8 @@ if __name__ == '__main__':
     
 
     # Example usage
-    #filenames = [path_records.format(i) for i in range(0,56)]  
-    filenames = [path_records.format(i) for i in range(0,6)]
+    filenames = [path_records.format(i) for i in range(0,56)]  
+    #filenames = [path_records.format(i) for i in range(0,6)]
     training_data = CustomDataset([filenames[i] for i in TRAINING_SHAPES],N_NEIGHBORS,N_ORIG_NEIGHBORS)
     testing_data = CustomDataset([filenames[i] for i in TESTING_SHAPES],N_NEIGHBORS,N_ORIG_NEIGHBORS)
     train_loader = DataLoader(training_data,drop_last=True, batch_size=BATCH_SIZE ,num_workers=8,shuffle=True,collate_fn=collate_fn_classifier)
