@@ -34,7 +34,7 @@ N_TRAINING_SHAPES = len(TRAINING_SHAPES)
 N_TESTING_SHAPES = len(TESTING_SHAPES)
 LOG_DIR = "../log/log_famousthingi_logmap"
 n_patches = 10000
-path_records = "C:/Users/Akarsh/Desktop/project/extended-dse-meshing/data/numpy_training_data/famousthingi_logmap_patches_{}.npy"
+path_records = "../data/numpy_training_data/famousthingi_logmap_patches_{}.npy"
 
 TRAINSET_SIZE = n_patches*N_TRAINING_SHAPES
 VALSET_SIZE = n_patches*N_TESTING_SHAPES
